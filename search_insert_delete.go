@@ -90,6 +90,8 @@ func main() {
 	go searcher(1)
 	go deleter(2)
 	go inserter(1)
+	go inserter(2)
+	go inserter(3)
 	go deleter(1)
 
 	wg.Wait()
