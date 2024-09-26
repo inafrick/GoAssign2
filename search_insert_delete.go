@@ -1,99 +1,91 @@
 package main
 
 import (
+	"GoAssign2/FPPDSemaforo"
 	"fmt"
 	"sync"
 	"time"
 )
 
-type Semaphore struct {
-	sem chan struct{}
-}
-
-func NewSemaphore(initial int) *Semaphore {
-	return &Semaphore{sem: make(chan struct{}, initial)}
-}
-
-func (s *Semaphore) Wait() {
-	s.sem <- struct{}{}
-}
-
-func (s *Semaphore) Signal() {
-	<-s.sem
-}
-
+// Definindo a estrutura do Lightswitch para controle de threads
 type Lightswitch struct {
-	count int
-	mutex sync.Mutex
+	counter int
+	mutex   sync.Mutex
 }
 
-func (l *Lightswitch) Wait(sem *Semaphore) {
-	l.mutex.Lock()
-	l.count++
-	if l.count == 1 {
-		sem.Wait()
+func (ls *Lightswitch) Wait(semaphore *FPPDSemaforo.Semaphore) {
+	ls.mutex.Lock()
+	ls.counter++
+	if ls.counter == 1 {
+		semaphore.Wait() // O primeiro a entrar fecha o semáforo
 	}
-	l.mutex.Unlock()
+	ls.mutex.Unlock()
 }
 
-func (l *Lightswitch) Signal(sem *Semaphore) {
-	l.mutex.Lock()
-	l.count--
-	if l.count == 0 {
-		sem.Signal()
+func (ls *Lightswitch) Signal(semaphore *FPPDSemaforo.Semaphore) {
+	ls.mutex.Lock()
+	ls.counter--
+	if ls.counter == 0 {
+		semaphore.Signal() // O último a sair libera o semáforo
 	}
-	l.mutex.Unlock()
+	ls.mutex.Unlock()
 }
 
-var (
-	insertMutex  = NewSemaphore(1)
-	noSearcher   = NewSemaphore(1)
-	noInserter   = NewSemaphore(1)
-	searchSwitch = &Lightswitch{}
-	insertSwitch = &Lightswitch{}
-	wg           sync.WaitGroup
-)
+// Declaração dos semáforos
+var insertMutex = FPPDSemaforo.NewSemaphore(1) // Garante que apenas um inseridor esteja na seção crítica
+var noSearcher = FPPDSemaforo.NewSemaphore(1)  // Garante que não há pesquisadores na seção crítica
+var noInserter = FPPDSemaforo.NewSemaphore(1)  // Garante que não há inseridores na seção crítica
+var searchSwitch Lightswitch                   // Lightswitch para pesquisadores
+var insertSwitch Lightswitch                   // Lightswitch para inseridores
 
-func searcher(id int) {
-	defer wg.Done()
-	searchSwitch.Wait(noSearcher)
-	fmt.Printf("Searcher %d is searching...\n", id)
-	time.Sleep(1 * time.Second) // Simulando a seção crítica
-	searchSwitch.Signal(noSearcher)
-	fmt.Printf("Searcher %d finished searching.\n", id)
+// Função para simular o comportamento de um pesquisador
+func searcher(id int, wg *sync.WaitGroup) {
+	defer wg.Done()               // Indica que a goroutine terminou
+	searchSwitch.Wait(noSearcher) // Aguarda sua vez para acessar a seção crítica
+	fmt.Printf("Pesquisador %d: na seção crítica\n", id)
+	time.Sleep(1 * time.Second)     // Simulando trabalho na seção crítica
+	searchSwitch.Signal(noSearcher) // Libera o controle quando terminar
+	fmt.Printf("Pesquisador %d: saindo da seção crítica\n", id)
 }
 
-func inserter(id int) {
-	defer wg.Done()
-	insertSwitch.Wait(noInserter)
-	insertMutex.Wait()
-	fmt.Printf("Inserter %d is inserting...\n", id)
-	time.Sleep(1 * time.Second) // Simulando a seção crítica
-	insertMutex.Signal()
-	insertSwitch.Signal(noInserter)
-	fmt.Printf("Inserter %d finished inserting.\n", id)
+// Função para simular o comportamento de um inseridor
+func inserter(id int, wg *sync.WaitGroup) {
+	defer wg.Done()               // Indica que a goroutine terminou
+	insertSwitch.Wait(noInserter) // Aguarda sua vez para acessar a seção crítica
+	insertMutex.Wait()            // Apenas um inseridor pode entrar
+	fmt.Printf("Inseridor %d: na seção crítica\n", id)
+	time.Sleep(2 * time.Second)     // Simulando trabalho na seção crítica
+	insertMutex.Signal()            // Libera para o próximo inseridor
+	insertSwitch.Signal(noInserter) // Indica que terminou de inserir
+	fmt.Printf("Inseridor %d: saindo da seção crítica\n", id)
 }
 
-func deleter(id int) {
-	defer wg.Done()
-	noSearcher.Wait()
-	noInserter.Wait()
-	fmt.Printf("Deleter %d is deleting...\n", id)
-	time.Sleep(1 * time.Second) // Simulando a seção crítica
-	noInserter.Signal()
-	noSearcher.Signal()
-	fmt.Printf("Deleter %d finished deleting.\n", id)
+// Função para simular o comportamento de um deletador
+func deleter(id int, wg *sync.WaitGroup) {
+	defer wg.Done()   // Indica que a goroutine terminou
+	noSearcher.Wait() // Deletador bloqueia pesquisadores
+	noInserter.Wait() // Deletador bloqueia inseridores
+	fmt.Printf("Deletador %d: na seção crítica\n", id)
+	time.Sleep(3 * time.Second) // Simulando trabalho na seção crítica
+	noInserter.Signal()         // Libera inseridores
+	noSearcher.Signal()         // Libera pesquisadores
+	fmt.Printf("Deletador %d: saindo da seção crítica\n", id)
 }
 
 func main() {
-	wg.Add(4)
-	go searcher(1)
-	go deleter(2)
-	go inserter(1)
-	go inserter(2)
-	go inserter(3)
-	go deleter(1)
+	var wg sync.WaitGroup
 
+	// Simulando threads pesquisadoras, inseridoras e deletadoras
+	wg.Add(6) // Número de threads
+
+	// Executando pesquisadores, inseridores e deletadores
+	go searcher(1, &wg)
+	go searcher(2, &wg)
+	go inserter(1, &wg)
+	go deleter(1, &wg)
+	go inserter(2, &wg)
+	go searcher(3, &wg)
+
+	// Aguardando todas as goroutines terminarem
 	wg.Wait()
-	fmt.Println("All operations completed successfully!")
 }
