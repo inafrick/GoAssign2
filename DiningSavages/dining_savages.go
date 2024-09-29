@@ -4,6 +4,7 @@ import (
 	"GoAssign2/FPPDSemaforo"
 	"fmt"
 	"sync"
+	"time"
 )
 
 type Lightswitch struct {
@@ -49,7 +50,7 @@ func savage(id int){
 			emptyPot.Signal()
 			fullPot.Wait()
 		}
-		getServingFromPot()
+		getServingFromPot(id)
 		mutex.Signal()
 
 		eat(id)
@@ -58,14 +59,19 @@ func savage(id int){
 
 func putServingsInPot(M int){
 	servings = M
+	fmt.Println("Cook is refilling the pot")
+	time.Sleep(1 * time.Second)
 }
 
-func getServingFromPot(){
+func getServingFromPot(id int){
 	servings--
+	fmt.Println("Savage", id, "is getting a serving")
+	time.Sleep(1 * time.Second)
 }
 
 func eat(id int){
 	fmt.Println("Savage", id, "is eating")
+	time.Sleep(1 * time.Second)
 }
 
 func main() {
@@ -74,7 +80,7 @@ func main() {
 	// simulando threads pesquisadoras, inseridoras e deletadoras
 	wg.Add(7) // número de threads
 
-	cook(10) // cozinheiro - com número máximo do pote
+	go cook(10) // cozinheiro - com número máximo do pote
 
 	for i := 0; i < 6; i++ {
 		go func(id int) {
